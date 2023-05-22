@@ -54,9 +54,8 @@ extern "C" {
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-void spiProcessing(uint8_t num);
 void spiInterrupt(uint8_t num);
-void writeTs(uint8_t buffNum);
+void spiProcessing();
 void sendTu();
 void tsInit();
 /* USER CODE END EFP */

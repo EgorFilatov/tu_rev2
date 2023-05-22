@@ -1,18 +1,19 @@
-main.cpp:91:6:void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef*)	2
-main.cpp:97:6:void spiInterrupt(uint8_t)	2
-main.cpp:107:6:void spiProcessing(uint8_t)	10
-main.cpp:146:6:void sendTu()	6
-main.cpp:164:6:void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef*)	4
-main.cpp:185:6:void HAL_SPI_ErrorCallback(SPI_HandleTypeDef*)	3
-main.cpp:200:6:void HAL_SPI_DMAErrorCallback(SPI_HandleTypeDef*)	3
-main.cpp:215:6:void tsInit()	2
-main.cpp:243:5:int main()	1
-main.cpp:298:6:void SystemClock_Config()	3
-main.cpp:338:13:void MX_IWDG_Init()	2
-main.cpp:367:13:void MX_SPI1_Init()	2
-main.cpp:407:13:void MX_SPI2_Init()	2
-main.cpp:444:13:void MX_DMA_Init()	1
-main.cpp:465:13:void MX_GPIO_Init()	1
-main.cpp:535:6:void Error_Handler()	1
-main.cpp:544:1:void __static_initialization_and_destruction_0(int, int)	4
-main.cpp:544:1:cpp)	1
+main.cpp:93:6:void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef*)	2
+main.cpp:99:6:void spiProcessing()	9
+main.cpp:135:6:void sendTu()	13
+main.cpp:174:6:void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef*)	2
+main.cpp:180:6:void HAL_SPI_ErrorCallback(SPI_HandleTypeDef*)	3
+main.cpp:198:6:void HAL_SPI_DMAErrorCallback(SPI_HandleTypeDef*)	3
+main.cpp:216:6:void timInit()	1
+main.cpp:220:6:void tsInit()	2
+main.cpp:248:5:int main()	1
+main.cpp:300:6:void SystemClock_Config()	3
+main.cpp:340:13:void MX_IWDG_Init()	2
+main.cpp:369:13:void MX_SPI1_Init()	2
+main.cpp:409:13:void MX_SPI2_Init()	2
+main.cpp:446:13:void MX_DMA_Init()	1
+main.cpp:467:13:void MX_GPIO_Init()	1
+main.cpp:537:6:void Error_Handler()	1
+main.cpp:546:1:void __static_initialization_and_destruction_0(int, int)	6
+main.cpp:546:1:cpp)	1
+main.cpp:546:1:cpp)	1

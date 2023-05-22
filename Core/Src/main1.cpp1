@@ -24,7 +24,6 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "Ts.h"
-#include "timer.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -56,23 +55,22 @@ DMA_HandleTypeDef hdma_spi2_tx;
 #define READY 0
 #define BUSY 1
 #define RECEIVED 2
-#define TU_SEND_NUM 2
-#define TU_SEND_TIME_MS 5000
 
-uint8_t rx[6] { 0 };
-uint8_t tx[6] { 0, 0, 0, 0, 2, 0 };
+uint8_t rxBuff[12] { 0 };
+uint8_t txBuff[12] { 0, 0, 0, 0, 2, 0,
+					 0, 0, 0, 0, 2, 0};
+
+uint8_t *rx[2] { &rxBuff[0], &rxBuff[6] };
+uint8_t *tx[2] { &txBuff[0], &txBuff[6] };
 
 uint8_t rxSaved[4] { 0 };
-uint8_t spiState { 0 };
+uint8_t spiState[2] { 0 };
+uint8_t spiBuffNum { 0 };
 
 uint8_t tuState { 0 };
 uint8_t tu[2] { 0 };
 uint8_t shiftRegNum { 0 };
 uint8_t sendTuNum { 0 };
-
-uint8_t tuIwdgFlag { 1 };
-
-CTimer tuTim;
 
 Ts ts[16];
 /* USER CODE END PV */
@@ -92,53 +90,63 @@ static void MX_IWDG_Init(void);
 /* USER CODE BEGIN 0 */
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi) {
 	if (hspi == &hspi2) {
-		spiState = RECEIVED;
+		spiInterrupt(spiBuffNum);
 	}
 }
 
-void spiProcessing() {
-	switch (spiState) {
-	case READY:
-		spiState = BUSY;
-		HAL_SPI_TransmitReceive_DMA(&hspi2, tx, rx, 6);
-		break;
-	case RECEIVED:
-		spiState = READY;
-		if ((uint8_t) (rx[0] + rx[1] + rx[2] + rx[3] + rx[4]) == rx[5]) {
-			if (tuIwdgFlag == 1) {
-				HAL_IWDG_Refresh(&hiwdg);
-				tuIwdgFlag = 0;
-			}
-			tx[2] = rx[2];
-			tx[3] = rx[3];
+void spiInterrupt(uint8_t num) {
+	spiState[num] = RECEIVED;
+	uint8_t invNum = num ^ (1 << 0);
+	if (spiState[invNum] == READY) {
+		spiBuffNum = invNum;
+		spiState[spiBuffNum] = BUSY;
+		HAL_SPI_TransmitReceive_DMA(&hspi2, tx[spiBuffNum], rx[spiBuffNum], 6);
+	}
+}
+
+void spiProcessing(uint8_t num) {
+	uint8_t invNum = num ^ (1 << 0);
+	if (spiState[invNum] == RECEIVED) {
+		uint8_t rxSumm { 0 };
+		for (uint8_t i = 0; i <= 4; i++) {
+			rxSumm += rx[invNum][i];
+		}
+		if (rxSumm == rx[invNum][5] && tuState != BUSY) {
+			HAL_IWDG_Refresh(&hiwdg);
+			tx[invNum][2] = rx[invNum][2];
+			tx[invNum][3] = rx[invNum][3];
 			for (uint8_t i = 0; i <= 3; i++) {
-				if (rx[i] != rxSaved[i]) {
-					rxSaved[i] = rx[i];
-					sendTuNum = TU_SEND_NUM;
+				if (rx[invNum][i] != rxSaved[i]) {
+					rxSaved[i] = rx[invNum][i];
+					sendTuNum = 3;
 				}
 			}
 		}
+
 		uint8_t tsNum { 0 };
 		while (tsNum <= 7) {
-			ts[tsNum].read(&tx[0], tsNum);
+			ts[tsNum].read(&tx[invNum][0], tsNum);
 			++tsNum;
 		}
 		while (tsNum <= 15) {
-			ts[tsNum].read(&tx[1], tsNum - 8);
+			ts[tsNum].read(&tx[invNum][1], tsNum - 8);
 			++tsNum;
 		}
-		tx[5] = tx[0] + tx[1] + tx[2] + tx[3] + tx[4];
-		break;
+
+		tx[invNum][5] = (tx[invNum][0] + tx[invNum][1] + tx[invNum][2] + tx[invNum][3] + tx[invNum][4]);
+		spiState[invNum] = READY;
+		if (spiState[num] == RECEIVED) {
+			spiBuffNum = invNum;
+			spiState[spiBuffNum] = BUSY;
+			HAL_SPI_TransmitReceive_DMA(&hspi2, tx[spiBuffNum], rx[spiBuffNum], 6);
+		}
 	}
 }
 
 void sendTu() {
-	if (tuTim.GetEvent() && sendTuNum == 0) {
-		sendTuNum = 1;
-		tuTim.Off();
-	}
-	if (tuState == READY && sendTuNum != 0 && shiftRegNum == 0) {
+	if (sendTuNum != 0 && tuState == READY) {
 		tuState = BUSY;
+		--sendTuNum;
 		for (uint8_t n = 0; n <= 1; n++) {
 			for (uint8_t i = 0; i <= 7; i++) {
 				if (rxSaved[n + 2] & (1 << i)) {
@@ -148,32 +156,29 @@ void sendTu() {
 				}
 			}
 		}
-		GPIOA->BSRR |= (1 << (4 + 16));
+		GPIOA->BRR = (1 << 4);
 		HAL_SPI_Transmit_DMA(&hspi1, &tu[0], 1);
-	} else if (tuState == RECEIVED) {
-		tuState = BUSY;
-		switch (shiftRegNum) {
-		case 0:
-			shiftRegNum = 1;
-			GPIOA->BSRR |= (1 << 4);
-			GPIOF->BSRR |= (1 << (5 + 16));
-			HAL_SPI_Transmit_DMA(&hspi1, &tu[1], 1);
-			break;
-		case 1:
-			--sendTuNum;
-			tuTim.Reset();
-			tuIwdgFlag = 1;
-			shiftRegNum = 0;
-			GPIOF->BSRR |= (1 << 5);
-			tuState = READY;
-			break;
-		}
 	}
 }
 
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi) {
 	if (hspi == &hspi1) {
-		tuState = RECEIVED;
+		switch (shiftRegNum) {
+		case 0:
+			GPIOA->BSRR = (1 << 4);
+			GPIOA->BRR = (1 << 4);
+			GPIOA->BSRR = (1 << 4);
+
+			GPIOF->BRR = (1 << 5);
+			HAL_SPI_Transmit_DMA(&hspi1, &tu[1], 1);
+			break;
+		case 1:
+			GPIOF->BSRR = (1 << 5);
+			GPIOF->BRR = (1 << 5);
+			GPIOF->BSRR = (1 << 5);
+			tuState = READY;
+		}
+		shiftRegNum ^= (1 << 0);
 	}
 }
 
@@ -185,13 +190,10 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi) {
 	__HAL_SPI_CLEAR_OVRFLAG(hspi);
 	hspi->ErrorCode = HAL_SPI_ERROR_NONE;
 	if (hspi == &hspi2) {
-		spiState = RECEIVED;
+		HAL_SPI_TxRxCpltCallback(hspi);
 	}
 	if (hspi == &hspi1) {
-		tuState = RECEIVED;
-		shiftRegNum = 0;
-		GPIOA->BSRR |= (1 << 4);
-		GPIOF->BSRR |= (1 << 5);
+		HAL_SPI_TxCpltCallback(hspi);
 	}
 }
 
@@ -203,18 +205,11 @@ void HAL_SPI_DMAErrorCallback(SPI_HandleTypeDef *hspi) {
 	__HAL_SPI_CLEAR_OVRFLAG(hspi);
 	hspi->ErrorCode = HAL_SPI_ERROR_NONE;
 	if (hspi == &hspi2) {
-		spiState = RECEIVED;
+		HAL_SPI_TxRxCpltCallback(hspi);
 	}
 	if (hspi == &hspi1) {
-		tuState = RECEIVED;
-		shiftRegNum = 0;
-		GPIOA->BSRR |= (1 << 4);
-		GPIOF->BSRR |= (1 << 5);
+		HAL_SPI_TxCpltCallback(hspi);
 	}
-}
-
-void timInit() {
-	tuTim.SetDefault(TU_SEND_TIME_MS);
 }
 
 void tsInit() {
@@ -223,21 +218,21 @@ void tsInit() {
 		ts[i].setSw(GPIOB, 1, GPIOB, 10, GPIOC, 5, GPIOC, 4);
 	}
 	ts[0].setPinNum(0);
-	ts[1].setPinNum(1);
-	ts[2].setPinNum(2);
-	ts[3].setPinNum(3);
-	ts[4].setPinNum(8);
-	ts[5].setPinNum(9);
-	ts[6].setPinNum(10);
-	ts[7].setPinNum(11);
-	ts[8].setPinNum(15);
-	ts[9].setPinNum(14);
-	ts[10].setPinNum(13);
-	ts[11].setPinNum(12);
-	ts[12].setPinNum(7);
-	ts[13].setPinNum(6);
-	ts[14].setPinNum(5);
-	ts[15].setPinNum(4);
+		ts[1].setPinNum(1);
+		ts[2].setPinNum(2);
+		ts[3].setPinNum(3);
+		ts[4].setPinNum(8);
+		ts[5].setPinNum(9);
+		ts[6].setPinNum(10);
+		ts[7].setPinNum(11);
+		ts[8].setPinNum(15);
+		ts[9].setPinNum(14);
+		ts[10].setPinNum(13);
+		ts[11].setPinNum(12);
+		ts[12].setPinNum(7);
+		ts[13].setPinNum(6);
+		ts[14].setPinNum(5);
+		ts[15].setPinNum(4);
 }
 /* USER CODE END 0 */
 
@@ -275,7 +270,10 @@ int main(void)
   MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
   tsInit();
-  timInit();
+
+  spiState[0] = BUSY;
+  spiBuffNum = 0;
+  HAL_SPI_TransmitReceive_DMA(&hspi2, tx[0], rx[0], 6);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -283,7 +281,7 @@ int main(void)
   while (1)
   {
 	    /* Обработка приема по spi */
-		spiProcessing();
+		spiProcessing(spiBuffNum);
 		/* Отправка сигналов ТУ */
 		sendTu();
     /* USER CODE END WHILE */
